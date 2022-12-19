@@ -1881,6 +1881,10 @@ export default class AudioMotionAnalyzer {
 			this.toggleAnalyzer( options.start );
 	}
 
+	destroy() {
+		this.canvas.remove()
+	}
+
 }
 
 /* Custom error class */
