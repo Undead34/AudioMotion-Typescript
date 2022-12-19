@@ -1,0 +1,23 @@
+{
+  "devDependencies": {
+    "typescript": "^4.9.4"
+  },
+  "name": "audiomotion-typescript",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Undead34/AudioMotion-Typescript.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Undead34/AudioMotion-Typescript/issues"
+  },
+  "homepage": "https://github.com/Undead34/AudioMotion-Typescript#readme",
+  "description": ""
+}
