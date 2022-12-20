@@ -9,10 +9,11 @@ audio.src = "https://dl.dropboxusercontent.com/s/umi5qyeq5b1y0oz/01.%20%E9%9D%92
 audio.crossOrigin = "anonymous"
 
 const audioMotion = new AudioMotion(container, {
-  source: audio
+  source: audio,
+  showFPS: true
 })
 
-audioMotion.height = 500
+audioMotion.height = 550
 
 play.onclick = () => audio.play()
 pause.onclick = () => audio.pause()

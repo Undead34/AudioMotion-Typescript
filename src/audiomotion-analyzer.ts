@@ -8,8 +8,8 @@
  */
 
 import { VERSION, C0, HALF_PI, ROOT24, RPM, TAU, defaults, gradients } from "./audiomotion/constants"
-import { ConstructorOptions, GradientOptions } from "./audiomotion/types"
-
+import { ConstructorOptions, GradientOptions, Options } from "./audiomotion/types"
+import Modes from "./audiomotion/modes"
 
 class AudioMotionAnalyzer {
   /**
@@ -19,12 +19,14 @@ class AudioMotionAnalyzer {
    * @param {object} [options]
    * @returns {object} AudioMotionAnalyzer object
    */
+  modes: Modes
 
   constructor(container: HTMLElement, options: ConstructorOptions) {
     this._ready = false;
 
     // Gradient definitions
     this._gradients = gradients;
+    this.modes = new Modes()
 
     // Set container
     this._container = container || document.body;
@@ -50,25 +52,9 @@ class AudioMotionAnalyzer {
       }
     }
 
-
     // make sure audioContext is valid
     if (!audioCtx.createGain)
       throw new AudioMotionError('ERR_INVALID_AUDIO_CONTEXT', 'Provided audio context is not valid');
-
-    /*
-      Connection routing:
-      ===================
-
-      for STEREO:                              +--->  analyzer[0]  ---+
-                                               |                      |
-      (source) --->  input  --->  splitter  ---+                      +--->  merger  --->  output  ---> (destination)
-                                               |                      |
-                                               +--->  analyzer[1]  ---+
-
-      for MONO:
-
-      (source) --->  input  ----------------------->  analyzer[0]  --------------------->  output  ---> (destination)
-    */
 
     // create the analyzer nodes, channel splitter and merger, and gain nodes for input/output connections
     const analyzer = this._analyzer = [audioCtx.createAnalyser(), audioCtx.createAnalyser()];
@@ -191,317 +177,6 @@ class AudioMotionAnalyzer {
    */
 
 
-  get alphaBars() {
-    return this._alphaBars;
-  }
-  set alphaBars(value) {
-    this._alphaBars = !!value;
-    this._calcAux();
-  }
-
-  get barSpace() {
-    return this._barSpace;
-  }
-  set barSpace(value) {
-    this._barSpace = +value || 0;
-    this._calcAux();
-  }
-
-  get fftSize() {
-    return this._analyzer[0].fftSize;
-  }
-  set fftSize(value) {
-    for (const i of [0, 1])
-      this._analyzer[i].fftSize = value;
-    const binCount = this._analyzer[0].frequencyBinCount;
-    this._fftData = [new Uint8Array(binCount), new Uint8Array(binCount)];
-    this._calcBars();
-  }
-
-  get gradient() {
-    return this._gradient;
-  }
-  set gradient(value) {
-    if (!this._gradients.hasOwnProperty(value))
-      throw new AudioMotionError('ERR_UNKNOWN_GRADIENT', `Unknown gradient: '${value}'`);
-
-    this._gradient = value;
-    this._makeGrad();
-  }
-
-  get height() {
-    return this._height;
-  }
-  set height(h) {
-    this._height = h;
-    this._setCanvas('user');
-  }
-
-  get ledBars() {
-    return this._showLeds;
-  }
-  set ledBars(value) {
-    this._showLeds = !!value;
-    this._calcAux();
-  }
-
-  get loRes() {
-    return this._loRes;
-  }
-  set loRes(value) {
-    this._loRes = !!value;
-    this._setCanvas('lores');
-  }
-
-  get lumiBars() {
-    return this._lumiBars;
-  }
-  set lumiBars(value) {
-    this._lumiBars = !!value;
-    this._calcAux();
-    this._calcLeds();
-    this._makeGrad();
-  }
-
-  get maxDecibels() {
-    return this._analyzer[0].maxDecibels;
-  }
-  set maxDecibels(value) {
-    for (const i of [0, 1])
-      this._analyzer[i].maxDecibels = value;
-  }
-
-  get maxFreq() {
-    return this._maxFreq;
-  }
-  set maxFreq(value) {
-    if (value < 1)
-      throw new AudioMotionError('ERR_FREQUENCY_TOO_LOW', `Frequency values must be >= 1`);
-    else {
-      this._maxFreq = value;
-      this._calcBars();
-    }
-  }
-
-  get minDecibels() {
-    return this._analyzer[0].minDecibels;
-  }
-  set minDecibels(value) {
-    for (const i of [0, 1])
-      this._analyzer[i].minDecibels = value;
-  }
-
-  get minFreq() {
-    return this._minFreq;
-  }
-  set minFreq(value) {
-    if (value < 1)
-      throw new AudioMotionError('ERR_FREQUENCY_TOO_LOW', `Frequency values must be >= 1`);
-    else {
-      this._minFreq = value;
-      this._calcBars();
-    }
-  }
-
-  get mirror() {
-    return this._mirror;
-  }
-  set mirror(value) {
-    this._mirror = Math.sign(value) | 0; // ensure only -1, 0 or 1
-    this._calcAux();
-    this._calcBars();
-    this._makeGrad();
-  }
-
-  get mode() {
-    return this._mode;
-  }
-  set mode(value) {
-    const mode = value | 0;
-    if (mode >= 0 && mode <= 10 && mode != 9) {
-      this._mode = mode;
-      this._calcAux();
-      this._calcBars();
-      this._makeGrad();
-    }
-    else
-      throw new AudioMotionError('ERR_INVALID_MODE', `Invalid mode: ${value}`);
-  }
-
-  get outlineBars() {
-    return this._outlineBars;
-  }
-  set outlineBars(value) {
-    this._outlineBars = !!value;
-    this._calcAux();
-  }
-
-  get radial() {
-    return this._radial;
-  }
-  set radial(value) {
-    this._radial = !!value;
-    this._calcAux();
-    this._calcBars();
-    this._makeGrad();
-  }
-
-  get reflexRatio() {
-    return this._reflexRatio;
-  }
-  set reflexRatio(value) {
-    value = +value || 0;
-    if (value < 0 || value >= 1)
-      throw new AudioMotionError('ERR_REFLEX_OUT_OF_RANGE', `Reflex ratio must be >= 0 and < 1`);
-    else {
-      this._reflexRatio = value;
-      this._calcAux();
-      this._makeGrad();
-      this._calcLeds();
-    }
-  }
-
-  // DEPRECATED - use ledBars instead
-  get showLeds() {
-    return this.ledBars;
-  }
-  set showLeds(value) {
-    this.ledBars = value;
-  }
-
-  get smoothing() {
-    return this._analyzer[0].smoothingTimeConstant;
-  }
-  set smoothing(value) {
-    for (const i of [0, 1])
-      this._analyzer[i].smoothingTimeConstant = value;
-  }
-
-  get spinSpeed() {
-    return this._spinSpeed;
-  }
-  set spinSpeed(value) {
-    value = +value || 0;
-    if (this._spinSpeed === undefined || value == 0)
-      this._spinAngle = -HALF_PI; // initialize or reset the rotation angle
-    this._spinSpeed = value;
-  }
-
-  get splitGradient() {
-    return this._splitGradient;
-  }
-  set splitGradient(value) {
-    this._splitGradient = !!value;
-    this._makeGrad();
-  }
-
-  get stereo() {
-    return this._stereo;
-  }
-  set stereo(value) {
-    this._stereo = !!value;
-
-    // update node connections
-    this._input.disconnect();
-    this._input.connect(this._stereo ? this._splitter : this._analyzer[0]);
-    this._analyzer[0].disconnect();
-    if (this._outNodes.length) // connect analyzer only if the output is connected to other nodes
-      this._analyzer[0].connect(this._stereo ? this._merger : this._output);
-
-    // update properties affected by stereo
-    this._calcAux();
-    this._createScales();
-    this._calcLeds();
-    this._makeGrad();
-  }
-
-  get volume() {
-    return this._output.gain.value;
-  }
-  set volume(value) {
-    this._output.gain.value = value;
-  }
-
-  get width() {
-    return this._width;
-  }
-  set width(w) {
-    this._width = w;
-    this._setCanvas('user');
-  }
-
-  // Read only properties
-
-  get audioCtx() {
-    return this._input.context;
-  }
-
-  get canvas() {
-    return this._canvasCtx.canvas;
-  }
-
-  get canvasCtx() {
-    return this._canvasCtx;
-  }
-
-  get connectedSources() {
-    return this._sources;
-  }
-
-  get connectedTo() {
-    return this._outNodes;
-  }
-
-  get energy() { // DEPRECATED - use getEnergy() instead
-    return this.getEnergy();
-  }
-
-  get fps() {
-    return this._fps;
-  }
-
-  get fsHeight() {
-    return this._fsHeight;
-  }
-
-  get fsWidth() {
-    return this._fsWidth;
-  }
-
-  get isAlphaBars() {
-    return this._isAlphaBars;
-  }
-
-  get isFullscreen() {
-    return (document.fullscreenElement) === this._fsEl;
-  }
-  get isLedBars() {
-    return this._isLedDisplay;
-  }
-  get isLedDisplay() { // DEPRECATED - use isLedBars instead
-    return this.isLedBars;
-  }
-  get isLumiBars() {
-    return this._isLumiBars;
-  }
-  get isOctaveBands() {
-    return this._isOctaveBands;
-  }
-  get isOn() {
-    return this._runId !== undefined;
-  }
-  get isOutlineBars() {
-    return this._isOutline;
-  }
-  get peakEnergy() { // DEPRECATED - use getEnergy('peak') instead
-    return this.getEnergy('peak');
-  }
-  get pixelRatio() {
-    return this._pixelRatio;
-  }
-  static get version() {
-    return VERSION;
-  }
 
   /**
    * ==========================================================================
@@ -777,8 +452,6 @@ class AudioMotionAnalyzer {
     if (this.isFullscreen) {
       if (document.exitFullscreen)
         document.exitFullscreen();
-      else if (document.webkitExitFullscreen)
-        document.webkitExitFullscreen();
     }
     else {
       const fsEl = this._fsEl;
@@ -1163,6 +836,7 @@ class AudioMotionAnalyzer {
       maxBarHeight = isRadial ? Math.min(centerX, centerY) - radius : analyzerHeight,
       useCanvas = this.useCanvas;
 
+
     if (energy.val > 0)
       this._spinAngle += this._spinSpeed * RPM;
 
@@ -1311,175 +985,13 @@ class AudioMotionAnalyzer {
       let points = [];
 
       // draw bars / lines
-
-      for (let i = 0; i < nBars; i++) {
-
-        const bar = this._bars[i],
-          { binLo, binHi, ratioLo, ratioHi } = bar;
-
-        let barHeight = Math.max(interpolate(binLo, ratioLo), interpolate(binHi, ratioHi));
-
-        // check additional bins (if any) for this bar and keep the highest value
-        for (let j = binLo + 1; j < binHi; j++) {
-          if (fftData[j] > barHeight)
-            barHeight = fftData[j];
-        }
-
-        barHeight /= 255;
-        bar.value[channel] = barHeight;
-        currentEnergy += barHeight;
-
-        // update bar peak
-        if (bar.peak[channel] > 0) {
-          bar.hold[channel]--;
-          // if hold is negative, it becomes the "acceleration" for peak drop
-          if (bar.hold[channel] < 0)
-            bar.peak[channel] += bar.hold[channel] / maxBarHeight;
-        }
-
-        // check if it's a new peak for this bar
-        if (barHeight >= bar.peak[channel]) {
-          bar.peak[channel] = barHeight;
-          bar.hold[channel] = 30; // set peak hold time to 30 frames (0.5s)
-        }
-
-        // if not using the canvas, move earlier to the next bar
-        if (!useCanvas)
-          continue;
-
-        // set opacity for bar effects
-        if (isLumiBars || isAlphaBars)
-          ctx.globalAlpha = barHeight;
-        else if (isOutline)
-          ctx.globalAlpha = this.fillAlpha;
-
-        // normalize barHeight
-        if (isLedDisplay) {
-          barHeight = ledPosY(barHeight);
-          if (barHeight < 0)
-            barHeight = 0; // prevent showing leds below 0 when overlay and reflex are active
-        }
-        else
-          barHeight = barHeight * maxBarHeight | 0;
-
-        // invert bar for radial channel 1
-        if (isRadial && channel == 1)
-          barHeight *= -1;
-
-        // bar width may need small adjustments for some bars, when barSpace == 0
-        let adjWidth = width,
-          posX = bar.posX;
-
-        // Draw current bar or line segment
-
-        if (mode == 10) {
-          // compute the average between the initial bar (i==0) and the next one
-          // used to smooth the curve when the initial posX is off the screen, in mirror and radial modes
-          const nextBarAvg = i ? 0 : (fftData[this._bars[1].binLo] / 255 * maxBarHeight * (!isRadial || !channel || - 1) + barHeight) / 2;
-
-          if (isRadial) {
-            if (i == 0)
-              ctx.lineTo(...radialXY(0, (posX < 0 ? nextBarAvg : barHeight), 1));
-            // draw line to the current point, avoiding overlapping wrap-around frequencies
-            if (posX >= 0) {
-              const point = [posX, barHeight];
-              ctx.lineTo(...radialXY(...point, 1));
-              points.push(point);
-            }
-          }
-          else { // Linear
-            if (i == 0) {
-              // start the line off-screen using the previous FFT bin value as the initial amplitude
-              if (mirrorMode != -1) {
-                const prevFFTData = binLo ? fftData[binLo - 1] / 255 * maxBarHeight : barHeight; // use previous FFT bin value, when available
-                ctx.moveTo(initialX - lineWidth, analyzerBottom - prevFFTData);
-              }
-              else
-                ctx.moveTo(initialX, analyzerBottom - (posX < initialX ? nextBarAvg : barHeight));
-            }
-            // draw line to the current point
-            // avoid X values lower than the origin when mirroring left, otherwise draw them for best graph accuracy
-            if (mirrorMode != -1 || posX >= initialX)
-              ctx.lineTo(posX, analyzerBottom - barHeight);
-          }
-        }
-        else {
-          if (mode > 0) {
-            if (isLedDisplay)
-              posX += Math.max(ledSpaceH / 2, this._barSpacePx / 2);
-            else {
-              if (this._barSpace == 0) {
-                posX |= 0;
-                if (i > 0 && posX > this._bars[i - 1].posX + width) {
-                  posX--;
-                  adjWidth++;
-                }
-              }
-              else
-                posX += this._barSpacePx / 2;
-            }
-          }
-
-          if (isLedDisplay) {
-            const x = posX + width / 2;
-            // draw "unlit" leds
-            if (this.showBgColor && !this.overlay) {
-              const alpha = ctx.globalAlpha;
-              ctx.beginPath();
-              ctx.moveTo(x, channelTop);
-              ctx.lineTo(x, analyzerBottom);
-              ctx.strokeStyle = '#7f7f7f22';
-              ctx.globalAlpha = 1;
-              ctx.stroke();
-              // restore properties
-              ctx.strokeStyle = ctx.fillStyle;
-              ctx.globalAlpha = alpha;
-            }
-            ctx.beginPath();
-            ctx.moveTo(x, isLumiBars ? channelTop : analyzerBottom);
-            ctx.lineTo(x, isLumiBars ? channelBottom : analyzerBottom - barHeight);
-            ctx.stroke();
-          }
-          else if (posX >= initialX) {
-            if (isRadial)
-              radialPoly(posX, 0, adjWidth, barHeight, isOutline);
-            else {
-              const x = posX,
-                y = isLumiBars ? channelTop : analyzerBottom,
-                w = adjWidth,
-                h = isLumiBars ? channelBottom : -barHeight;
-
-              ctx.beginPath();
-              ctx.moveTo(x, y);
-              ctx.lineTo(x, y + h);
-              ctx.lineTo(x + w, y + h);
-              ctx.lineTo(x + w, y);
-
-              strokeIf(isOutline);
-              ctx.fill();
-            }
-          }
-        }
-
-        // Draw peak
-        const peak = bar.peak[channel];
-        if (peak > 0 && this.showPeaks && !isLumiBars && posX >= initialX && posX < finalX) {
-          // choose the best opacity for the peaks
-          if (isOutline && lineWidth > 0)
-            ctx.globalAlpha = 1;
-          else if (isAlphaBars)
-            ctx.globalAlpha = peak;
-
-          // render peak according to current mode / effect
-          if (isLedDisplay)
-            ctx.fillRect(posX, analyzerBottom - ledPosY(peak), width, ledHeight);
-          else if (!isRadial)
-            ctx.fillRect(posX, analyzerBottom - peak * maxBarHeight, adjWidth, 2);
-          else if (mode != 10) // radial - no peaks for mode 10
-            radialPoly(posX, peak * maxBarHeight * (!channel || -1), adjWidth, -2);
-        }
-
-      } // for ( let i = 0; i < nBars; i++ )
+      this.modes.drawBarsLines(ctx, nBars, this._bars, interpolate, fftData, channel, currentEnergy,
+        maxBarHeight, useCanvas, isLumiBars, isAlphaBars,
+        isOutline, this.fillAlpha, isLedDisplay, ledPosY, isRadial,
+        width, mode, this.showPeaks, initialX, lineWidth,
+        analyzerBottom, ledHeight, finalX, radialPoly, radialXY,
+        points, mirrorMode, ledSpaceH, this._barSpacePx,
+        this._barSpace, this.showBgColor, this.overlay, channelTop, channelBottom, strokeIf)
 
       // if not using the canvas, move earlier to the next channel
       if (!useCanvas)
@@ -1561,6 +1073,7 @@ class AudioMotionAnalyzer {
         energy.peak *= (30 + energy.hold--) / 30; // decay (drops to zero in 30 frames)
     }
 
+    // MOdes
     if (useCanvas) {
       // Mirror effect
       if (mirrorMode && !isRadial) {
@@ -1597,12 +1110,9 @@ class AudioMotionAnalyzer {
       this._frame = 0;
       this._time = timestamp;
     }
+
     if (this.showFPS) {
-      const size = canvasX.height;
-      ctx.font = `bold ${size}px sans-serif`;
-      ctx.fillStyle = '#0f0';
-      ctx.textAlign = 'right';
-      ctx.fillText(Math.round(this._fps), canvas.width - size, size * 2);
+      this.modes.showFPS(canvasX, ctx, this._fps, canvas)
     }
 
     // call callback function, if defined
@@ -1718,7 +1228,7 @@ class AudioMotionAnalyzer {
   /**
    * Internal function to change canvas dimensions on demand
    */
-  _setCanvas(reason) {
+  _setCanvas(reason: "create" | "fschange" | "lores" | "user" | "resize") {
     // if initialization is not finished, quit
     if (!this._ready)
       return;
@@ -1788,11 +1298,7 @@ class AudioMotionAnalyzer {
   /**
    * Set object properties
    */
-  _setProps(options, useDefaults?) {
-
-    // settings defaults
-
-
+  _setProps(options: Options, useDefaults?) {
     // callback functions properties
     const callbacks = ['onCanvasDraw', 'onCanvasResize'];
 
@@ -1805,6 +1311,7 @@ class AudioMotionAnalyzer {
 
     if (useDefaults || options === undefined)
       options = { ...defaults, ...options }; // merge options with defaults
+
 
     for (const prop of Object.keys(options)) {
       if (callbacks.includes(prop) && typeof options[prop] !== 'function') // check invalid callback
@@ -1906,6 +1413,319 @@ class AudioMotionAnalyzer {
   public freqHi: any;
   public binHi: any;
   public ratioHi: any;
+
+  get alphaBars() {
+    return this._alphaBars;
+  }
+
+  set alphaBars(value) {
+    this._alphaBars = !!value;
+    this._calcAux();
+  }
+
+  get barSpace() {
+    return this._barSpace;
+  }
+  set barSpace(value) {
+    this._barSpace = +value || 0;
+    this._calcAux();
+  }
+
+  get fftSize() {
+    return this._analyzer[0].fftSize;
+  }
+  set fftSize(value) {
+    for (const i of [0, 1])
+      this._analyzer[i].fftSize = value;
+    const binCount = this._analyzer[0].frequencyBinCount;
+    this._fftData = [new Uint8Array(binCount), new Uint8Array(binCount)];
+    this._calcBars();
+  }
+
+  get gradient() {
+    return this._gradient;
+  }
+  set gradient(value) {
+    if (!this._gradients.hasOwnProperty(value))
+      throw new AudioMotionError('ERR_UNKNOWN_GRADIENT', `Unknown gradient: '${value}'`);
+
+    this._gradient = value;
+    this._makeGrad();
+  }
+
+  get height() {
+    return this._height;
+  }
+  set height(h) {
+    this._height = h;
+    this._setCanvas('user');
+  }
+
+  get ledBars() {
+    return this._showLeds;
+  }
+  set ledBars(value) {
+    this._showLeds = !!value;
+    this._calcAux();
+  }
+
+  get loRes() {
+    return this._loRes;
+  }
+  set loRes(value) {
+    this._loRes = !!value;
+    this._setCanvas('lores');
+  }
+
+  get lumiBars() {
+    return this._lumiBars;
+  }
+  set lumiBars(value) {
+    this._lumiBars = !!value;
+    this._calcAux();
+    this._calcLeds();
+    this._makeGrad();
+  }
+
+  get maxDecibels() {
+    return this._analyzer[0].maxDecibels;
+  }
+  set maxDecibels(value) {
+    for (const i of [0, 1])
+      this._analyzer[i].maxDecibels = value;
+  }
+
+  get maxFreq() {
+    return this._maxFreq;
+  }
+  set maxFreq(value) {
+    if (value < 1)
+      throw new AudioMotionError('ERR_FREQUENCY_TOO_LOW', `Frequency values must be >= 1`);
+    else {
+      this._maxFreq = value;
+      this._calcBars();
+    }
+  }
+
+  get minDecibels() {
+    return this._analyzer[0].minDecibels;
+  }
+  set minDecibels(value) {
+    for (const i of [0, 1])
+      this._analyzer[i].minDecibels = value;
+  }
+
+  get minFreq() {
+    return this._minFreq;
+  }
+  set minFreq(value) {
+    if (value < 1)
+      throw new AudioMotionError('ERR_FREQUENCY_TOO_LOW', `Frequency values must be >= 1`);
+    else {
+      this._minFreq = value;
+      this._calcBars();
+    }
+  }
+
+  get mirror() {
+    return this._mirror;
+  }
+  set mirror(value) {
+    this._mirror = Math.sign(value) | 0; // ensure only -1, 0 or 1
+    this._calcAux();
+    this._calcBars();
+    this._makeGrad();
+  }
+
+  get mode() {
+    return this._mode;
+  }
+  set mode(value) {
+    const mode = value | 0;
+    if (mode >= 0 && mode <= 10 && mode != 9) {
+      this._mode = mode;
+      this._calcAux();
+      this._calcBars();
+      this._makeGrad();
+    }
+    else
+      throw new AudioMotionError('ERR_INVALID_MODE', `Invalid mode: ${value}`);
+  }
+
+  get outlineBars() {
+    return this._outlineBars;
+  }
+  set outlineBars(value) {
+    this._outlineBars = !!value;
+    this._calcAux();
+  }
+
+  get radial() {
+    return this._radial;
+  }
+  set radial(value) {
+    this._radial = !!value;
+    this._calcAux();
+    this._calcBars();
+    this._makeGrad();
+  }
+
+  get reflexRatio() {
+    return this._reflexRatio;
+  }
+  set reflexRatio(value) {
+    value = +value || 0;
+    if (value < 0 || value >= 1)
+      throw new AudioMotionError('ERR_REFLEX_OUT_OF_RANGE', `Reflex ratio must be >= 0 and < 1`);
+    else {
+      this._reflexRatio = value;
+      this._calcAux();
+      this._makeGrad();
+      this._calcLeds();
+    }
+  }
+
+  // DEPRECATED - use ledBars instead
+  get showLeds() {
+    return this.ledBars;
+  }
+  set showLeds(value) {
+    this.ledBars = value;
+  }
+
+  get smoothing() {
+    return this._analyzer[0].smoothingTimeConstant;
+  }
+  set smoothing(value) {
+    for (const i of [0, 1])
+      this._analyzer[i].smoothingTimeConstant = value;
+  }
+
+  get spinSpeed() {
+    return this._spinSpeed;
+  }
+  set spinSpeed(value) {
+    value = +value || 0;
+    if (this._spinSpeed === undefined || value == 0)
+      this._spinAngle = -HALF_PI; // initialize or reset the rotation angle
+    this._spinSpeed = value;
+  }
+
+  get splitGradient() {
+    return this._splitGradient;
+  }
+  set splitGradient(value) {
+    this._splitGradient = !!value;
+    this._makeGrad();
+  }
+
+  get stereo() {
+    return this._stereo;
+  }
+  set stereo(value) {
+    this._stereo = !!value;
+
+    // update node connections
+    this._input.disconnect();
+    this._input.connect(this._stereo ? this._splitter : this._analyzer[0]);
+    this._analyzer[0].disconnect();
+    if (this._outNodes.length) // connect analyzer only if the output is connected to other nodes
+      this._analyzer[0].connect(this._stereo ? this._merger : this._output);
+
+    // update properties affected by stereo
+    this._calcAux();
+    this._createScales();
+    this._calcLeds();
+    this._makeGrad();
+  }
+
+  get volume() {
+    return this._output.gain.value;
+  }
+  set volume(value) {
+    this._output.gain.value = value;
+  }
+
+  get width() {
+    return this._width;
+  }
+  set width(w) {
+    this._width = w;
+    this._setCanvas('user');
+  }
+
+  // Read only properties
+
+  get audioCtx() {
+    return this._input.context;
+  }
+
+  get canvas() {
+    return this._canvasCtx.canvas;
+  }
+
+  get canvasCtx() {
+    return this._canvasCtx;
+  }
+
+  get connectedSources() {
+    return this._sources;
+  }
+
+  get connectedTo() {
+    return this._outNodes;
+  }
+
+  get energy() { // DEPRECATED - use getEnergy() instead
+    return this.getEnergy();
+  }
+
+  get fps() {
+    return this._fps;
+  }
+
+  get fsHeight() {
+    return this._fsHeight;
+  }
+
+  get fsWidth() {
+    return this._fsWidth;
+  }
+
+  get isAlphaBars() {
+    return this._isAlphaBars;
+  }
+
+  get isFullscreen() {
+    return (document.fullscreenElement) === this._fsEl;
+  }
+  get isLedBars() {
+    return this._isLedDisplay;
+  }
+  get isLedDisplay() { // DEPRECATED - use isLedBars instead
+    return this.isLedBars;
+  }
+  get isLumiBars() {
+    return this._isLumiBars;
+  }
+  get isOctaveBands() {
+    return this._isOctaveBands;
+  }
+  get isOn() {
+    return this._runId !== undefined;
+  }
+  get isOutlineBars() {
+    return this._isOutline;
+  }
+  get peakEnergy() { // DEPRECATED - use getEnergy('peak') instead
+    return this.getEnergy('peak');
+  }
+  get pixelRatio() {
+    return this._pixelRatio;
+  }
+  static get version() {
+    return VERSION;
+  }
 }
 
 /* Custom error class */
