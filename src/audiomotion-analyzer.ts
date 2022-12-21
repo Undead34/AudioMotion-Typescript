@@ -169,24 +169,6 @@ class AudioMotionAnalyzer {
   }
 
   /**
-   * ==========================================================================
-   *
-   * PUBLIC PROPERTIES GETTERS AND SETTERS
-   *
-   * ==========================================================================
-   */
-
-
-
-  /**
-   * ==========================================================================
-     *
-   * PUBLIC METHODS
-   *
-   * ==========================================================================
-   */
-
-  /**
    * Connects an HTML media element or audio node to the analyzer
    *
    * @param {object} an instance of HTMLMediaElement or AudioNode
@@ -277,15 +259,6 @@ class AudioMotionAnalyzer {
   getBars() {
     return Array.from(this._bars, ({ posX, freqLo, freqHi, hold, peak, value }) => ({ posX, freqLo, freqHi, hold, peak, value }));
   }
-
-  /**
-   * Returns the energy of a frequency, or average energy of a range of frequencies
-   *
-   * @param [{number|string}] single or initial frequency (Hz), or preset name; if undefined, returns the overall energy
-   * @param [{number}] ending frequency (Hz)
-   * @returns {number|null} energy value (0 to 1) or null, if the specified preset is unknown
-   */
-
 
   getEnergy(startFreq?, endFreq?) {
     if (startFreq === undefined)
@@ -462,13 +435,6 @@ class AudioMotionAnalyzer {
     }
   }
 
-  /**
-   * ==========================================================================
-   *
-   * PRIVATE METHODS
-   *
-   * ==========================================================================
-   */
 
   /**
    * Calculate auxiliary values and flags
@@ -1336,83 +1302,83 @@ class AudioMotionAnalyzer {
   showBgColor: boolean;
   showFPS: boolean;
 
-  public _gradients: { [name: string]: GradientOptions };
-  public _ready: boolean;
-  public _container: any;
-  public _defaultWidth: any;
-  public _defaultHeight: any;
-  public _analyzer: any;
-  public _splitter: any;
-  public _merger: any;
-  public _input: GainNode;
-  public _output: any;
-  public _sources: any;
-  public _outNodes: Array<AudioDestinationNode | AudioNode>;
-  public _energy: any;
-  public _canvasCtx: any;
-  public _fsEl: any;
-  public _fsTimeout: any;
-  public _fsChanging: any;
-  public _alphaBars: any;
-  public _barSpace: any;
-  public _fftData: any;
-  public _gradient: any;
-  public _height: any;
-  public _showLeds: any;
-  public _loRes: any;
-  public _lumiBars: any;
-  public _maxFreq: any;
-  public _minFreq: any;
-  public _mirror: any;
-  public _mode: any;
-  public _outlineBars: any;
-  public _radial: any;
-  public _reflexRatio: any;
-  public _spinSpeed: any;
-  public _spinAngle: any;
-  public _splitGradient: any;
-  public _stereo: any;
-  public _width: any;
-  public _fps: any;
-  public _fsHeight: any;
-  public _fsWidth: any;
-  public _isAlphaBars: any;
-  public _isLedDisplay: any;
-  public _isLumiBars: any;
-  public _isOctaveBands: any;
-  public _runId: any;
-  public _isOutline: any;
-  public _pixelRatio: any;
-  public _bars: any;
-  public _ledParams: any;
-  public _frame: any;
-  public _time: any;
-  public _radius: any;
-  public _barSpacePx: any;
-  public _barWidth: any;
-  public _maximizeLeds: any;
-  public _channelHeight: any;
-  public _analyzerHeight: any;
-  public _channelGap: any;
-  public _analyzerWidth: any;
-  public _initialX: any;
-  public _minLog: any;
-  public _logWidth: any;
-  public _leds: any;
-  public _scaleX: any;
-  public _scaleR: any;
-  public lineWidth: any;
-  public overlay: any;
-  public _canvasGradient: any;
-  public onCanvasDraw: any;
-  public _fsStatus: any;
-  public onCanvasResize: any;
-  public freqLo: any;
-  public binLo: any;
-  public ratioLo: any;
-  public freqHi: any;
-  public binHi: any;
-  public ratioHi: any;
+  _gradients: { [name: string]: GradientOptions };
+  _ready: boolean;
+  _container: any;
+  _defaultWidth: any;
+  _defaultHeight: any;
+  _analyzer: any;
+  _splitter: any;
+  _merger: any;
+  _input: GainNode;
+  _output: any;
+  _sources: any;
+  _outNodes: Array<AudioDestinationNode | AudioNode>;
+  _energy: any;
+  _canvasCtx: any;
+  _fsEl: any;
+  _fsTimeout: any;
+  _fsChanging: any;
+  _alphaBars: any;
+  _barSpace: any;
+  _fftData: any;
+  _gradient: any;
+  _height: any;
+  _showLeds: any;
+  _loRes: any;
+  _lumiBars: any;
+  _maxFreq: any;
+  _minFreq: any;
+  _mirror: any;
+  _mode: any;
+  _outlineBars: any;
+  _radial: any;
+  _reflexRatio: any;
+  _spinSpeed: any;
+  _spinAngle: any;
+  _splitGradient: any;
+  _stereo: any;
+  _width: any;
+  _fps: any;
+  _fsHeight: any;
+  _fsWidth: any;
+  _isAlphaBars: any;
+  _isLedDisplay: any;
+  _isLumiBars: any;
+  _isOctaveBands: any;
+  _runId: any;
+  _isOutline: any;
+  _pixelRatio: any;
+  _bars: any;
+  _ledParams: any;
+  _frame: any;
+  _time: any;
+  _radius: any;
+  _barSpacePx: any;
+  _barWidth: any;
+  _maximizeLeds: any;
+  _channelHeight: any;
+  _analyzerHeight: any;
+  _channelGap: any;
+  _analyzerWidth: any;
+  _initialX: any;
+  _minLog: any;
+  _logWidth: any;
+  _leds: any;
+  _scaleX: any;
+  _scaleR: any;
+  lineWidth: any;
+  overlay: any;
+  _canvasGradient: any;
+  onCanvasDraw: any;
+  _fsStatus: any;
+  onCanvasResize: any;
+  freqLo: any;
+  binLo: any;
+  ratioLo: any;
+  freqHi: any;
+  binHi: any;
+  ratioHi: any;
 
   get alphaBars() {
     return this._alphaBars;
