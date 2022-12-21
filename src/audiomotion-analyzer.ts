@@ -8,103 +8,64 @@
  */
 
 import { VERSION, C0, HALF_PI, ROOT24, RPM, TAU, defaults, gradients } from "./audiomotion/constants"
-import { ConstructorOptions, GradientOptions, Options } from "./audiomotion/types"
+import { ConstructorOptions, GradientOptions, Options, AnalyzerBarData, LedParameters } from "./audiomotion/types"
 import Modes from "./audiomotion/modes"
 
 class AudioMotionAnalyzer {
-  /**
-   * CONSTRUCTOR
-   *
-   * @param {object} [container] DOM element where to insert the analyzer; if undefined, uses the document body
-   * @param {object} [options]
-   * @returns {object} AudioMotionAnalyzer object
-   */
-  modes: Modes
-
   constructor(container: HTMLElement, options: ConstructorOptions) {
     this._ready = false;
-
-    // Gradient definitions
     this._gradients = gradients;
     this.modes = new Modes()
-
-    // Set container
     this._container = container || document.body;
-
-    // Make sure we have minimal width and height dimensions in case of an inline container
     this._defaultWidth = this._container.clientWidth || 640;
     this._defaultHeight = this._container.clientHeight || 270;
 
-    // Use audio context provided by user, or create a new one
-
-    let audioCtx: AudioContext | BaseAudioContext;
-
     if (options.source && options.source instanceof AudioNode) {
-      audioCtx = options.source.context
+      this.audioCtx = options.source.context
     } else if (options.audioCtx instanceof AudioContext) {
-      audioCtx = options.audioCtx
+      this.audioCtx = options.audioCtx
     } else {
       try {
-        audioCtx = new window.AudioContext();
+        this.audioCtx = new AudioContext();
       }
       catch (err) {
         throw new AudioMotionError('ERR_AUDIO_CONTEXT_FAIL', 'Could not create audio context. Web Audio API not supported?');
       }
     }
 
-    // make sure audioContext is valid
-    if (!audioCtx.createGain)
+    if (!this.audioCtx.createGain)
       throw new AudioMotionError('ERR_INVALID_AUDIO_CONTEXT', 'Provided audio context is not valid');
 
-    // create the analyzer nodes, channel splitter and merger, and gain nodes for input/output connections
-    const analyzer = this._analyzer = [audioCtx.createAnalyser(), audioCtx.createAnalyser()];
-    const splitter = this._splitter = audioCtx.createChannelSplitter(2);
-    const merger = this._merger = audioCtx.createChannelMerger(2);
-    this._input = audioCtx.createGain();
-    this._output = audioCtx.createGain();
+    const analyzer = this._analyzer = [this.audioCtx.createAnalyser(), this.audioCtx.createAnalyser()];
+    const splitter = this._splitter = this.audioCtx.createChannelSplitter(2);
+    const merger = this._merger = this.audioCtx.createChannelMerger(2);
 
-    // initialize sources array and connect audio source if provided in the options
+    this._input = this.audioCtx.createGain();
+    this._output = this.audioCtx.createGain();
     this._sources = [];
+
     if (options.source)
       this.connectInput(options.source);
 
-    // connect splitter -> analyzers
     for (const i of [0, 1])
       splitter.connect(analyzer[i], i);
 
-    // connect merger -> output
     merger.connect(this._output);
 
-    // connect output -> destination (speakers)
     this._outNodes = [];
     if (options.connectSpeakers !== false)
       this.connectOutput();
 
-    // initialize object to save energy
     this._energy = { val: 0, peak: 0, hold: 0 };
 
-    // create analyzer canvas
     const canvas = document.createElement('canvas');
-    canvas.style.maxWidth = '100%'; // canvas.style = 'max-width: 100%;'; XD
+    canvas.style.maxWidth = '100%';
     this._canvasCtx = canvas.getContext('2d');
 
-    // create auxiliary canvases for the X-axis and radial scale labels
     this._scaleX = document.createElement('canvas').getContext('2d');
     this._scaleR = document.createElement('canvas').getContext('2d');
-
-    // set fullscreen element (defaults to canvas)
     this._fsEl = options.fsElement || canvas;
 
-    // Update canvas size on container / window resize and fullscreen events
-
-    // Fullscreen changes are handled quite differently across browsers:
-    // 1. Chromium browsers will trigger a `resize` event followed by a `fullscreenchange`
-    // 2. Firefox triggers the `fullscreenchange` first and then the `resize`
-    // 3. Chrome on Android (TV) won't trigger a `resize` event, only `fullscreenchange`
-    // 4. Safari won't trigger `fullscreenchange` events at all, and on iPadOS the `resize`
-    //    event is triggered **on the window** only (last tested on iPadOS 14)
-
-    // helper function for resize events
     const onResize = () => {
       if (!this._fsTimeout) {
         // delay the resize to prioritize a possible following `fullscreenchange` event
@@ -117,16 +78,13 @@ class AudioMotionAnalyzer {
       }
     }
 
-    // if browser supports ResizeObserver, listen for resize on the container
     if (window.ResizeObserver) {
       const resizeObserver = new ResizeObserver(onResize);
       resizeObserver.observe(this._container);
     }
 
-    // listen for resize events on the window - required for fullscreen on iPadOS
     window.addEventListener('resize', onResize);
 
-    // listen for fullscreenchange events on the canvas - not available on Safari
     canvas.addEventListener('fullscreenchange', () => {
       // set flag to indicate a fullscreen change in progress
       this._fsChanging = true;
@@ -145,25 +103,20 @@ class AudioMotionAnalyzer {
       }, 60);
     });
 
-    // Resume audio context if in suspended state (browsers' autoplay policy)
     const unlockContext = () => {
-      if (audioCtx.state == 'suspended' && audioCtx instanceof AudioContext)
-        audioCtx.resume();
+      if (this.audioCtx.state == 'suspended' && this.audioCtx instanceof AudioContext)
+        this.audioCtx.resume();
       window.removeEventListener('click', unlockContext);
     }
     window.addEventListener('click', unlockContext);
 
-    // initialize internal variables
     this._calcAux();
 
-    // Set configuration options and use defaults for any missing properties
     this._setProps(options, true);
 
-    // add canvas to the container
     if (this.useCanvas)
       this._container.appendChild(canvas);
 
-    // Finish canvas setup
     this._ready = true;
     this._setCanvas('create');
   }
@@ -177,26 +130,36 @@ class AudioMotionAnalyzer {
   connectInput(source: HTMLMediaElement | AudioNode) {
     const isHTML = source instanceof HTMLMediaElement;
 
-    if (!(isHTML || source.connect))
+    if (!(isHTML || source.connect)) {
       throw new AudioMotionError('ERR_INVALID_AUDIO_SOURCE', 'Audio source must be an instance of HTMLMediaElement or AudioNode');
-
-    if (!(isHTML && this.audioCtx instanceof AudioContext))
-      throw new AudioMotionError('ERR_INVALID_AUDIO_SOURCE', 'The audio source must be an AudioNode when you control the AudioContext');
-
-    const node = isHTML ? this.audioCtx.createMediaElementSource(source) : source;
-    if (!this._sources.includes(node)) {
-      node.connect(this._input);
-      this._sources.push(node);
     }
 
-    return node;
+    if (isHTML) {
+      try {
+        if ('createMediaElementSource' in this.audioCtx) {
+          const node = this.audioCtx.createMediaElementSource(source);
+          if (!this._sources.includes(node)) {
+            node.connect(this._input);
+            this._sources.push(node);
+          }
+
+          return node;
+        } else {
+          throw new AudioMotionError('ERR_INVALID_AUDIO_SOURCE', 'The audio source must be an AudioNode when you control the AudioContext');
+        }
+      } catch (error) {
+        throw new AudioMotionError('ERR_INVALID_AUDIO_SOURCE', 'The audio source ya esta conectada a otro createMediaElementSource');
+      }
+    } else {
+      const node = source;
+      if (!this._sources.includes(node)) {
+        node.connect(this._input);
+        this._sources.push(node);
+      }
+      return node;
+    }
   }
 
-  /**
-   * Connects the analyzer output to another audio node
-   *
-   * @param [{object}] an AudioNode; if undefined, the output is connected to the audio context destination (speakers)
-   */
   connectOutput(node = this.audioCtx.destination) {
     if (this._outNodes.includes(node))
       return;
@@ -211,11 +174,6 @@ class AudioMotionAnalyzer {
     }
   }
 
-  /**
-   * Disconnects audio sources from the analyzer
-   *
-   * @param [{object|array}] a connected AudioNode object or an array of such objects; if undefined, all connected nodes are disconnected
-   */
   disconnectInput(sources: AudioNode | AudioNode[]) {
     if (!sources)
       sources = Array.from(this._sources);
@@ -285,7 +243,7 @@ class AudioMotionAnalyzer {
 
     const startBin = this._freqToBin(startFreq),
       endBin = endFreq ? this._freqToBin(endFreq) : startBin,
-      chnCount = this._stereo + 1;
+      chnCount = Number(this._stereo) + 1;
 
     let energy = 0;
     for (let channel = 0; channel < chnCount; channel++) {
@@ -357,7 +315,7 @@ class AudioMotionAnalyzer {
    *
    * @param {object} [params]
    */
-  setLedParams(params) {
+  setLedParams(params: LedParameters) {
     let maxLeds, spaceV, spaceH;
 
     // coerce parameters to Number; `NaN` results are rejected in the condition below
@@ -376,7 +334,7 @@ class AudioMotionAnalyzer {
    *
    * @param {object} options
    */
-  setOptions(options) {
+  setOptions(options: Options) {
     this._setProps(options);
   }
 
@@ -386,7 +344,7 @@ class AudioMotionAnalyzer {
    * @param {number} min minimum decibels value
    * @param {number} max maximum decibels value
    */
-  setSensitivity(min, max) {
+  setSensitivity(min:number, max:number) {
     for (const i of [0, 1]) {
       this._analyzer[i].minDecibels = Math.min(min, max);
       this._analyzer[i].maxDecibels = Math.max(min, max);
@@ -399,7 +357,7 @@ class AudioMotionAnalyzer {
    * @param {boolean} [value] if undefined, inverts the current status
    * @returns {boolean} resulting status after the change
    */
-  toggleAnalyzer(value) {
+  toggleAnalyzer(value: boolean) {
     const started = this.isOn;
 
     if (value === undefined)
@@ -430,8 +388,6 @@ class AudioMotionAnalyzer {
       const fsEl = this._fsEl;
       if (fsEl.requestFullscreen)
         fsEl.requestFullscreen();
-      else if (fsEl.webkitRequestFullscreen)
-        fsEl.webkitRequestFullscreen();
     }
   }
 
@@ -454,15 +410,14 @@ class AudioMotionAnalyzer {
     this._isOutline = this._outlineBars && this._isOctaveBands && !this._isLumiBars && !this._isLedDisplay;
     this._maximizeLeds = !this._stereo || this._reflexRatio > 0 && !this._isLumiBars;
 
-    this._channelHeight = canvas.height - (isDual && !this._isLedDisplay ? .5 : 0) >> isDual;
+    this._channelHeight = canvas.height - (isDual && !this._isLedDisplay ? .5 : 0) >> Number(isDual);
     this._analyzerHeight = this._channelHeight * (this._isLumiBars || isRadial ? 1 : 1 - this._reflexRatio) | 0;
 
     // channelGap is **0** if isLedDisplay == true (LEDs already have spacing); **1** if canvas height is odd (windowed); **2** if it's even
     // TODO: improve this, make it configurable?
     this._channelGap = isDual ? canvas.height - this._channelHeight * 2 : 0;
-
-    this._analyzerWidth = canvas.width - centerX * (this._mirror != 0);
-    this._initialX = centerX * (this._mirror == -1 && !isRadial);
+    this._analyzerWidth = canvas.width - centerX * Number((this._mirror !== 0));
+    this._initialX = centerX * Number((this._mirror == -1 && !isRadial));
   }
 
   /**
@@ -486,14 +441,13 @@ class AudioMotionAnalyzer {
                                    minLog
       */
 
-    const bars = this._bars = []; // initialize object property
-
+    const bars: AnalyzerBarData[] = this._bars = []; // initialize object property
     if (!this._ready)
       return;
 
     // helper functions
-    const binToFreq = bin => bin * this.audioCtx.sampleRate / this.fftSize || 1; // returns 1 for bin 0
-    const barsPush = (posX, binLo, binHi, freqLo, freqHi, ratioLo, ratioHi) => bars.push({ posX, binLo, binHi, freqLo, freqHi, ratioLo, ratioHi, peak: [0, 0], hold: [0], value: [0] });
+    const binToFreq = (bin: number) => bin * this.audioCtx.sampleRate / this.fftSize || 1; // returns 1 for bin 0
+    const barsPush = (posX: number, binLo: number, binHi: number, freqLo: number, freqHi: number, ratioLo: number, ratioHi: number) => bars.push({ posX, binLo, binHi, freqLo, freqHi, ratioLo, ratioHi, peak: [0, 0], hold: [0], value: [0] });
 
     const analyzerWidth = this._analyzerWidth,
       initialX = this._initialX,
@@ -774,7 +728,7 @@ class AudioMotionAnalyzer {
    * Redraw the canvas
    * this is called 60 times per second by requestAnimationFrame()
    */
-  _draw(timestamp) {
+  _draw(timestamp: number) {
     const ctx = this._canvasCtx,
       canvas = ctx.canvas,
       canvasX = this._scaleX.canvas,
@@ -801,7 +755,6 @@ class AudioMotionAnalyzer {
       radius = this._radius,
       maxBarHeight = isRadial ? Math.min(centerX, centerY) - radius : analyzerHeight,
       useCanvas = this.useCanvas;
-
 
     if (energy.val > 0)
       this._spinAngle += this._spinSpeed * RPM;
@@ -839,7 +792,7 @@ class AudioMotionAnalyzer {
 
     // LED attributes and helper function for bar height calculation
     const [ledCount, ledSpaceH, ledSpaceV, ledHeight] = this._leds || [];
-    const ledPosY = height => (height * ledCount | 0) * (ledHeight + ledSpaceV) - ledSpaceV;
+    const ledPosY = (height: number) => (height * ledCount | 0) * (ledHeight + ledSpaceV) - ledSpaceV;
 
     // select background color
     const bgColor = (!this.showBgColor || isLedDisplay && !this.overlay) ? '#000' : this._gradients[this._gradient].bgColor;
@@ -856,7 +809,7 @@ class AudioMotionAnalyzer {
 
     const nBars = this._bars.length;
 
-    for (let channel = 0; channel < isStereo + 1; channel++) {
+    for (let channel = 0; channel < Number(isStereo) + 1; channel++) {
 
       const channelTop = channelHeight * channel + channelGap * channel,
         channelBottom = channelTop + channelHeight,
@@ -1027,7 +980,7 @@ class AudioMotionAnalyzer {
     } // for ( let channel = 0; channel < isStereo + 1; channel++ ) {
 
     // Update energy
-    energy.val = currentEnergy / (nBars << isStereo);
+    energy.val = currentEnergy / (nBars << Number(isStereo));
     if (energy.val >= energy.peak) {
       energy.peak = energy.val;
       energy.hold = 30;
@@ -1096,10 +1049,10 @@ class AudioMotionAnalyzer {
   /**
    * Return the FFT data bin (array index) which represents a given frequency
    */
-  _freqToBin(freq, rounding = 'round') {
+  _freqToBin(freq:number, rounding = 'round') {
     const max = this._analyzer[0].frequencyBinCount - 1,
+      // @ts-ignore
       bin = Math[rounding](freq * this.fftSize / this.audioCtx.sampleRate);
-
     return bin < max ? bin : max;
   }
 
@@ -1129,12 +1082,14 @@ class AudioMotionAnalyzer {
       colorStops = currGradient.colorStops,
       isHorizontal = currGradient.dir == 'h';
 
-    let grad;
+    let grad: CanvasGradient;
 
     if (this._radial)
-      grad = ctx.createRadialGradient(centerX, centerY, maxRadius, centerX, centerY, radius - (maxRadius - radius) * this._stereo);
-    else
-      grad = ctx.createLinearGradient(...(isHorizontal ? [initialX, 0, initialX + this._analyzerWidth, 0] : [0, 0, 0, gradientHeight]));
+      grad = ctx.createRadialGradient(centerX, centerY, maxRadius, centerX, centerY, radius - (maxRadius - radius) * Number(this._stereo));
+    else {
+      let args: number[] = isHorizontal ? [initialX, 0, initialX + this._analyzerWidth, 0] : [0, 0, 0, gradientHeight]
+      grad = ctx.createLinearGradient(args[0], args[1], args[2], args[3]);
+    }
 
     if (colorStops) {
       const dual = this._stereo && !this._splitGradient && !isHorizontal;
@@ -1142,12 +1097,12 @@ class AudioMotionAnalyzer {
       // helper function
       const addColorStop = (offset, colorInfo) => grad.addColorStop(offset, colorInfo.color || colorInfo);
 
-      for (let channel = 0; channel < 1 + dual; channel++) {
+      for (let channel = 0; channel < 1 + Number(dual); channel++) {
         colorStops.forEach((colorInfo, index) => {
-
           const maxIndex = colorStops.length - 1;
 
-          let offset = colorInfo.pos !== undefined ? colorInfo.pos : index / maxIndex;
+          let offset = typeof colorInfo === "object" ? colorInfo.pos : index / maxIndex;
+
 
           // in dual mode (not split), use half the original offset for each channel
           if (dual)
@@ -1167,7 +1122,7 @@ class AudioMotionAnalyzer {
             if (this._radial || isLumiBars) {
               const revIndex = maxIndex - index;
               colorInfo = colorStops[revIndex];
-              offset = 1 - (colorInfo.pos !== undefined ? colorInfo.pos : revIndex / maxIndex) / 2;
+              offset = 1 - (typeof colorInfo === "object" ? colorInfo.pos : revIndex / maxIndex) / 2;
             }
             else {
               // if the first offset is not 0, create an additional color stop to prevent bleeding from the first channel
@@ -1202,7 +1157,7 @@ class AudioMotionAnalyzer {
     const ctx = this._canvasCtx,
       canvas = ctx.canvas,
       canvasX = this._scaleX.canvas,
-      pixelRatio = window.devicePixelRatio / (this._loRes + 1);
+      pixelRatio = window.devicePixelRatio / (this._loRes ? 2 : 1); // (this._loRes + 1) _loRes is a bool false = 0; false+1=0+1=1; true+1=1+1=2
 
     let screenWidth = window.screen.width * pixelRatio,
       screenHeight = window.screen.height * pixelRatio;
@@ -1264,7 +1219,7 @@ class AudioMotionAnalyzer {
   /**
    * Set object properties
    */
-  _setProps(options: Options, useDefaults?) {
+  _setProps(options: Options, useDefaults: boolean = false) {
     // callback functions properties
     const callbacks = ['onCanvasDraw', 'onCanvasResize'];
 
@@ -1277,12 +1232,14 @@ class AudioMotionAnalyzer {
 
     if (useDefaults || options === undefined)
       options = { ...defaults, ...options }; // merge options with defaults
-
-
-    for (const prop of Object.keys(options)) {
+    
+    let ObjKeysArray: (keyof typeof options)[] = Object.keys(options) as (keyof typeof options)[];
+    for (const prop of ObjKeysArray) {
       if (callbacks.includes(prop) && typeof options[prop] !== 'function') // check invalid callback
+        // @ts-ignore
         this[prop] = undefined;
       else if (validProps.includes(prop)) // set only valid properties
+        // @ts-ignore
         this[prop] = options[prop];
     }
 
@@ -1290,6 +1247,7 @@ class AudioMotionAnalyzer {
       this.toggleAnalyzer(options.start);
   }
 
+  audioCtx: AudioContext | BaseAudioContext;
   bgAlpha: number;
   fillAlpha: number;
   useCanvas: boolean;
@@ -1301,77 +1259,9 @@ class AudioMotionAnalyzer {
   reflexFit: boolean;
   showBgColor: boolean;
   showFPS: boolean;
-
-  _gradients: { [name: string]: GradientOptions };
-  _ready: boolean;
-  _container: any;
-  _defaultWidth: any;
-  _defaultHeight: any;
-  _analyzer: any;
-  _splitter: any;
-  _merger: any;
-  _input: GainNode;
-  _output: any;
-  _sources: any;
-  _outNodes: Array<AudioDestinationNode | AudioNode>;
-  _energy: any;
-  _canvasCtx: any;
-  _fsEl: any;
-  _fsTimeout: any;
-  _fsChanging: any;
-  _alphaBars: any;
-  _barSpace: any;
-  _fftData: any;
-  _gradient: any;
-  _height: any;
-  _showLeds: any;
-  _loRes: any;
-  _lumiBars: any;
-  _maxFreq: any;
-  _minFreq: any;
-  _mirror: any;
-  _mode: any;
-  _outlineBars: any;
-  _radial: any;
-  _reflexRatio: any;
-  _spinSpeed: any;
-  _spinAngle: any;
-  _splitGradient: any;
-  _stereo: any;
-  _width: any;
-  _fps: any;
-  _fsHeight: any;
-  _fsWidth: any;
-  _isAlphaBars: any;
-  _isLedDisplay: any;
-  _isLumiBars: any;
-  _isOctaveBands: any;
-  _runId: any;
-  _isOutline: any;
-  _pixelRatio: any;
-  _bars: any;
-  _ledParams: any;
-  _frame: any;
-  _time: any;
-  _radius: any;
-  _barSpacePx: any;
-  _barWidth: any;
-  _maximizeLeds: any;
-  _channelHeight: any;
-  _analyzerHeight: any;
-  _channelGap: any;
-  _analyzerWidth: any;
-  _initialX: any;
-  _minLog: any;
-  _logWidth: any;
-  _leds: any;
-  _scaleX: any;
-  _scaleR: any;
-  lineWidth: any;
-  overlay: any;
-  _canvasGradient: any;
+  overlay: boolean;
   onCanvasDraw: any;
-  _fsStatus: any;
+  lineWidth: any;
   onCanvasResize: any;
   freqLo: any;
   binLo: any;
@@ -1379,6 +1269,75 @@ class AudioMotionAnalyzer {
   freqHi: any;
   binHi: any;
   ratioHi: any;
+  modes: Modes;
+
+  private _gradients: { [name: string]: GradientOptions };
+  private _ready: boolean;
+  private _container: HTMLElement;
+  private _defaultWidth: number;
+  private _defaultHeight: number;
+  private _analyzer: AnalyserNode[];
+  private _splitter: ChannelSplitterNode;
+  private _merger: ChannelMergerNode;
+  private _input: GainNode;
+  private _output: AudioDestinationNode | AudioNode | GainNode;
+  private _sources: Array<MediaElementAudioSourceNode | AudioNode>;
+  private _outNodes: Array<AudioDestinationNode | AudioNode>;
+  private _energy: { val: number, peak: number, hold: number };
+  private _canvasCtx: CanvasRenderingContext2D;
+  private _fsEl: HTMLElement | HTMLCanvasElement;
+  private _fsTimeout: number;
+  private _fsChanging: boolean;
+  private _alphaBars: boolean;
+  private _barSpace: number;
+  private _fftData: any;
+  private _gradient: any;
+  private _height: number;
+  private _showLeds: boolean;
+  private _loRes: boolean;
+  private _lumiBars: boolean;
+  private _maxFreq: any;
+  private _minFreq: any;
+  private _mirror: number | -1 | 0 | 1;
+  private _mode: number;
+  private _outlineBars: boolean;
+  private _radial: boolean;
+  private _reflexRatio: number;
+  private _spinSpeed: any;
+  private _spinAngle: any;
+  private _splitGradient: any;
+  private _stereo: boolean;
+  private _width: number;
+  private _fps: any;
+  private _fsHeight: number;
+  private _fsWidth: number;
+  private _isAlphaBars: boolean;
+  private _isLedDisplay: boolean;
+  private _isLumiBars: boolean;
+  private _isOctaveBands: boolean;
+  private _isOutline: boolean;
+  private _runId: any;
+  private _pixelRatio: number;
+  private _bars: AnalyzerBarData[];
+  private _ledParams: any;
+  private _frame: any;
+  private _time: any;
+  private _radius: number;
+  private _barSpacePx: number;
+  private _barWidth: number;
+  private _maximizeLeds: boolean;
+  private _channelHeight: any;
+  private _analyzerHeight: any;
+  private _channelGap: any;
+  private _analyzerWidth: any;
+  private _initialX: any;
+  private _minLog: any;
+  private _logWidth: any;
+  private _leds: any;
+  private _scaleX: CanvasRenderingContext2D;
+  private _scaleR: CanvasRenderingContext2D;
+  private _canvasGradient: any;
+  private _fsStatus: any;
 
   get alphaBars() {
     return this._alphaBars;
@@ -1622,9 +1581,9 @@ class AudioMotionAnalyzer {
 
   // Read only properties
 
-  get audioCtx() {
-    return this._input.context;
-  }
+  // get audioCtx() {
+  //   return this._input.context;
+  // }
 
   get canvas() {
     return this._canvasCtx.canvas;

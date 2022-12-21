@@ -49,14 +49,19 @@ export interface Options {
   width?: number;
 }
 
-interface AnalyzerBarData {
+export interface AnalyzerBarData {
   posX: number;
   freqLo: number;
   freqHi: number;
   hold: [ number, number? ];
   peak: [ number, number ];
   value: [ number, number? ];
+  ratioLo?: number,
+  ratioHi?: number,
+  binLo?: number
+  binHi?: number
 }
+
 
 export interface ConstructorOptions extends Options {
   audioCtx?: AudioContext;
@@ -67,7 +72,7 @@ export interface ConstructorOptions extends Options {
 
 type EnergyPreset = "peak" | "bass" | "lowMid" | "mid" | "highMid" | "treble";
 
-type GradientColorStop = string | { pos: number; color: string };
+export type GradientColorStop = { pos: number; color: string } | string;
 
 type ArrayTwoOrMore<T> = {
   0: T
@@ -230,3 +235,4 @@ declare class AudioMotionAnalyzer {
 }
 
 export default AudioMotionAnalyzer;
+
